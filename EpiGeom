@@ -1,0 +1,388 @@
+{
+  "nbformat": 4,
+  "nbformat_minor": 0,
+  "metadata": {
+    "colab": {
+      "name": "Project2.2.ipynb",
+      "version": "0.3.2",
+      "provenance": [],
+      "collapsed_sections": [],
+      "include_colab_link": true
+    },
+    "kernelspec": {
+      "name": "python2",
+      "display_name": "Python 2"
+    }
+  },
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "view-in-github",
+        "colab_type": "text"
+      },
+      "source": [
+        "<a href=\"https://colab.research.google.com/github/MicroprocessorX069/Epipolar-Geometry-/blob/master/EpiGeom\" target=\"_parent\"><img src=\"https://colab.research.google.com/assets/colab-badge.svg\" alt=\"Open In Colab\"/></a>"
+      ]
+    },
+    {
+      "metadata": {
+        "id": "iZYTjw3S2fYp",
+        "colab_type": "code",
+        "outputId": "2157ce02-e1a6-4c59-aefe-cf3a6a78303b",
+        "colab": {
+          "base_uri": "https://localhost:8080/",
+          "height": 105
+        }
+      },
+      "cell_type": "code",
+      "source": [
+        "!pip install opencv-python==3.4.2.16\n",
+        "!pip install opencv-contrib-python==3.4.2.16"
+      ],
+      "execution_count": 1,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "text": [
+            "Requirement already satisfied: opencv-python==3.4.2.16 in /usr/local/lib/python2.7/dist-packages (3.4.2.16)\n",
+            "Requirement already satisfied: numpy>=1.11.1 in /usr/local/lib/python2.7/dist-packages (from opencv-python==3.4.2.16) (1.14.6)\n",
+            "Requirement already satisfied: opencv-contrib-python==3.4.2.16 in /usr/local/lib/python2.7/dist-packages (3.4.2.16)\n",
+            "Requirement already satisfied: numpy>=1.11.1 in /usr/local/lib/python2.7/dist-packages (from opencv-contrib-python==3.4.2.16) (1.14.6)\n"
+          ],
+          "name": "stdout"
+        }
+      ]
+    },
+    {
+      "metadata": {
+        "id": "htSNVWvyOY1u",
+        "colab_type": "code",
+        "colab": {}
+      },
+      "cell_type": "code",
+      "source": [
+        "import numpy as np\n",
+        "import cv2 as cv\n",
+        "from matplotlib import pyplot as plt\n",
+        "\n",
+        "def findKeypoints(input_name,output_name):\n",
+        "  img = cv.imread(input_name)\n",
+        "  gray= cv.cvtColor(img,cv.COLOR_BGR2GRAY)\n",
+        "  sift = cv.xfeatures2d.SIFT_create()\n",
+        "  kp, des = sift.detectAndCompute(gray,None)\n",
+        "  img=cv.drawKeypoints(gray,kp,img)\n",
+        "  #cv.imshow(\"Image\", img)\n",
+        "  #cv.waitKey(0)\n",
+        "  #cv.destroyAllWindows()\n",
+        "  cv.imwrite(output_name,img)\n",
+        "\n",
+        "\n",
+        "def knnMatching(input_name1,input_name2,output_name):\n",
+        "  img1 = cv.imread(input_name1,0)          # queryImage\n",
+        "  img2 = cv.imread(input_name2,0) # trainImage\n",
+        "  # Initiate SIFT detector\n",
+        "  sift = cv.xfeatures2d.SIFT_create()\n",
+        "  # find the keypoints and descriptors with SIFT\n",
+        "  kp1, des1 = sift.detectAndCompute(img1,None)\n",
+        "  kp2, des2 = sift.detectAndCompute(img2,None)\n",
+        "  # BFMatcher with default params\n",
+        "  bf = cv.BFMatcher()\n",
+        "  matches = bf.knnMatch(des1,des2, k=2)\n",
+        "  # Apply ratio test\n",
+        "  good = []\n",
+        "  for m,n in matches:\n",
+        "      if m.distance < 0.75*n.distance:\n",
+        "          good.append([m])\n",
+        "  img3=np.array([])       \n",
+        "  # cv.drawMatchesKnn expects list of lists as matches.\n",
+        "  img3 = cv.drawMatchesKnn(img1,kp1,img2,kp2,good,outImg=img3,flags=2)\n",
+        "  cv.imwrite(output_name,img3)\n",
+        " \n",
+        "def featureMatching(input_name1,input_name2,output_name):\n",
+        "  Min_matches=10\n",
+        "  img1=cv.imread(input_name1,0)\n",
+        "  img2=cv.imread(input_name2,0)\n",
+        "\n",
+        "  sift=cv.xfeatures2d.SIFT_create()\n",
+        "  kp1, des1=sift.detectAndCompute(img1, None) # Here mask is None.\n",
+        "  kp2, des2=sift.detectAndCompute(img2, None)\n",
+        "\n",
+        "  Flann_index=1\n",
+        "  #dict() is just a function to create a dictionary of arguments \n",
+        "  #More arguments can be kept than required by the method\n",
+        "\n",
+        "  index_param= dict(algorithm=Flann_index,trees=5)\n",
+        "  search_param=dict(checks=50)\n",
+        "  flann=cv.FlannBasedMatcher(index_param,search_param)\n",
+        "  matches=flann.knnMatch(des1,des2,k=2)\n",
+        "  good_matches=[]\n",
+        "  for m,n in matches:\n",
+        "    if m.distance<0.7*n.distance:\n",
+        "      good_matches.append(m)\n",
+        "\n",
+        "  #Set a condition of n matches to find an object\n",
+        "  #If found, extract the locations, to find the perspective transform\n",
+        "\n",
+        "  if(len(good_matches)>Min_matches):\n",
+        "    #queryIdx and trainIdx are the descriptors of the good matched locations\n",
+        "    src_pts=np.float32([kp1[m.queryIdx].pt for m in good_matches]).reshape(-1,1,2)\n",
+        "    dst_pts=np.float32([kp2[m.trainIdx].pt for m in good_matches]).reshape(-1,1,2)\n",
+        "\n",
+        "    M,mask=cv.findHomography(src_pts,dst_pts,cv.RANSAC,5.0)\n",
+        "    matchesMask=mask.ravel().tolist()\n",
+        "\n",
+        "    h,w=img1.shape\n",
+        "    pts=np.float32([[0,0],[0,h-1],[w-1,h-1],[w-1,0]]).reshape(-1,1,2)\n",
+        "    dst=cv.perspectiveTransform(pts,M)\n",
+        "\n",
+        "    img2=cv.polylines(img2,[np.int32(dst)],True,255,3,cv.LINE_AA)\n",
+        "\n",
+        "  else:\n",
+        "    print(\"not enoug matches\")\n",
+        "    matchesMask=None\n",
+        "\n",
+        "  draw_param=dict(matchColor=(0,255,0), singlePointColor=None, matchesMask= matchesMask, flags=2)\n",
+        "  imgQ4= cv.drawMatches(img1,kp1,img2,kp2,good_matches,None,**draw_param)\n",
+        "  cv.imwrite(output_name,imgQ4)\n",
+        "  \n",
+        "  #2 Functions\n",
+        "#2.2\n",
+        "import cv2 as cv\n",
+        "import numpy as np\n",
+        "\n",
+        "def calculateFundamentalMatrix(input_name1,input_name2):\n",
+        "  img1=cv.imread(input_name1,0)\n",
+        "  img2=cv.imread(input_name2,0)\n",
+        "  sift=cv.xfeatures2d.SIFT_create()\n",
+        "  kp1, des1= sift.detectAndCompute(img1,None)\n",
+        "  kp2, des2 = sift.detectAndCompute(img2,None)\n",
+        "  bf=cv.BFMatcher()\n",
+        "  matches=bf.knnMatch(des1,des2,k=2)\n",
+        "  good_matches=[]#?\n",
+        "  pts1=[]#?\n",
+        "  pts2=[] #?\n",
+        "  for m,n in matches:\n",
+        "    #print(m,\" \",n)\n",
+        "    if m.distance<0.75*n.distance: #?\n",
+        "      good_matches.append([m])\n",
+        "      pts1.append(kp1[m.queryIdx].pt) #.queryIdx\n",
+        "      pts2.append(kp2[m.trainIdx].pt)\n",
+        "  pts1 = np.int32(pts1)\n",
+        "  pts2 = np.int32(pts2)\n",
+        "  Fundamental_mat, mask= cv.findFundamentalMat(pts1,pts2,cv.FM_LMEDS)\n",
+        "  return Fundamental_mat\n",
+        "  #print(Fundamental_mat)\n",
+        "\n",
+        " #2.3\n",
+        "def drawlines(input_image1,input_image2, lines,pts1, pts2):\n",
+        "  img1=cv.imread(input_image1,0)\n",
+        "  img2=cv.imread(input_image2,0)\n",
+        "  h,w=img1.shape\n",
+        "  \n",
+        "  img1=cv.cvtColor(img1,cv.COLOR_GRAY2BGR)\n",
+        "  img2=cv.cvtColor(img2,cv.COLOR_GRAY2BGR)\n",
+        "  for h,pt1,pt2 in zip(lines,pts1,pts2):\n",
+        "    \n",
+        "    color=tuple(np.random.randint(0,255,3).tolist())\n",
+        "    x0, y0= map(int, [0, -h[2]/h[1]])\n",
+        "    x1, y1= map(int, [w,-(h[2]+h[0]*w)/h[1]])\n",
+        "    img1 = cv.line(img1, (x0,y0), (x1,y1), color,1)\n",
+        "    img1 = cv.circle(img1,tuple(pt1),5,color,-1)\n",
+        "    img2 = cv.circle(img2,tuple(pt2),5,color,-1)\n",
+        "  return img1,img2\n",
+        "\n",
+        "def plotEpilines(input_name1,input_name2,output_name1, output_name2):\n",
+        "  img1=cv.imread(input_name1,0)\n",
+        "  img2=cv.imread(input_name2,0)\n",
+        "  sift=cv.xfeatures2d.SIFT_create()\n",
+        "  kp1, des1= sift.detectAndCompute(img1, None)\n",
+        "  kp2, des2=sift.detectAndCompute(img2, None)\n",
+        "  \n",
+        "  bf=cv.BFMatcher()\n",
+        "  matches=bf.knnMatch(des1, des2, k=2)\n",
+        "  good_matches=[]\n",
+        "  pts1=[]\n",
+        "  pts2=[]\n",
+        "  for m,n in matches:\n",
+        "    if m.distance < 0.75*n.distance:\n",
+        "      good_matches.append([m])\n",
+        "      pts1.append(kp1[m.queryIdx].pt)\n",
+        "      pts2.append(kp2[m.trainIdx].pt)\n",
+        "  pts1 = np.int32(pts1)\n",
+        "  pts2 = np.int32(pts2)\n",
+        "  F, mask= cv.findFundamentalMat(pts1,pts2,cv.FM_LMEDS)\n",
+        "  pts1 = pts1[mask.ravel()==1]\n",
+        "  pts2 = pts2[mask.ravel()==1]\n",
+        "  # Find epilines corresponding to points in right image (second image) and\n",
+        "  # drawing its lines on left image\n",
+        "  lines1 = cv.computeCorrespondEpilines(pts2.reshape(-1,1,2), 2,F)\n",
+        "  lines1 = lines1.reshape(-1,3)\n",
+        "  img5,img6 = drawlines(input_name1,input_name2,lines1,pts1,pts2)\n",
+        "  # Find epilines corresponding to points in left image (first image) and\n",
+        "  # drawing its lines on right image\n",
+        "  lines2 = cv.computeCorrespondEpilines(pts1.reshape(-1,1,2), 1,F)\n",
+        "  lines2 = lines2.reshape(-1,3)\n",
+        "  img3,img4 = drawlines(input_name1,input_name2,lines2,pts2,pts1)\n",
+        "  cv.imwrite(output_name1,img3)\n",
+        "  cv.imwrite(output_name2,img4)\n",
+        "  \n",
+        "#2.4\n",
+        "def disparityMap(input_name1,input_name2,output_name):\n",
+        "  imgL = cv.imread(input_name1,0)\n",
+        "  imgR = cv.imread(input_name2,0)\n",
+        "  stereo = cv.createStereoBM(numDisparities=16, blockSize=15)\n",
+        "  disparity = stereo.compute(imgL,imgR)\n",
+        "  cv.imwrite(output_name,disparity)\n"
+      ],
+      "execution_count": 0,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "id": "vVNlYDh2tQC6",
+        "colab_type": "text"
+      },
+      "cell_type": "markdown",
+      "source": [
+        "## 2.1 Finding Keypoints and KNN"
+      ]
+    },
+    {
+      "metadata": {
+        "id": "Rxxy-n7tUTP0",
+        "colab_type": "code",
+        "colab": {}
+      },
+      "cell_type": "code",
+      "source": [
+        "#2.1\n",
+        "findKeypoints(\"tsucuba_left.png\",\"task2_sift1.jpg\")\n",
+        "findKeypoints(\"tsucuba_right.png\",\"task2_sift2.jpg\")\n",
+        "knnMatching(\"tsucuba_left.png\",\"tsucuba_right.png\",\"task2_matches_knn.jpg\")\n"
+      ],
+      "execution_count": 0,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "id": "R2cNax3OrqoW",
+        "colab_type": "text"
+      },
+      "cell_type": "markdown",
+      "source": [
+        "##2.2 Fundamental Matrix\n",
+        "\n",
+        "In computer vision, the fundamental matrix {\\displaystyle \\mathbf {F} } \\mathbf {F}  is a 3×3 matrix which relates corresponding points in stereo images. \n",
+        "That means, for all pairs of corresponding points holds:\n",
+        "\n",
+        "X'Fx = 0\n",
+        " \n",
+        " Fundamental Matrix F, maps a point in one image to a line (epiline) in the other image. \n",
+        " \n",
+        "This is calculated from matching points from both the images. A minimum of 8 such points are required to find the fundamental matrix (while using 8-point algorithm)."
+      ]
+    },
+    {
+      "metadata": {
+        "id": "QLeVydD2n7c4",
+        "colab_type": "code",
+        "colab": {
+          "base_uri": "https://localhost:8080/",
+          "height": 68
+        },
+        "outputId": "1d960a6b-5472-493e-9cb9-b4cb6710cd55"
+      },
+      "cell_type": "code",
+      "source": [
+        "calculateFundamentalMatrix(\"tsucuba_left.png\",\"tsucuba_right.png\")"
+      ],
+      "execution_count": 8,
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "data": {
+            "text/plain": [
+              "array([[ 5.96046448e-08, -1.21593475e-05, -3.21960449e-03],\n",
+              "       [ 4.45842743e-05,  1.31130219e-06,  3.72189356e+13],\n",
+              "       [-1.43432617e-03, -3.72189356e+13,  1.00000000e+00]])"
+            ]
+          },
+          "metadata": {
+            "tags": []
+          },
+          "execution_count": 8
+        }
+      ]
+    },
+    {
+      "metadata": {
+        "id": "K6dx7dgcsf1A",
+        "colab_type": "text"
+      },
+      "cell_type": "markdown",
+      "source": [
+        "## 2.3 Plotting Epilines\n",
+        "\n",
+        "The projection of the different points on OX form a line on right plane (line l′). We call it epiline corresponding to the point x.\n",
+        "\n",
+        "It means, to find the point x on the right image, search along this epiline. All points will have its corresponding epilines in the other image. The plane XOO′ is called Epipolar Plane.\n",
+        "\n",
+        "All the epilines pass through its epipole. So to find the location of epipole, we can find many epilines and find their intersection point."
+      ]
+    },
+    {
+      "metadata": {
+        "id": "wSBaKwRssfHB",
+        "colab_type": "code",
+        "colab": {}
+      },
+      "cell_type": "code",
+      "source": [
+        "#2.3\n",
+        "plotEpilines(\"tsucuba_left.png\",\"tsucuba_right.png\",\"task2_epi_right.jpg\", \"task2_epi_.left.jpg\")"
+      ],
+      "execution_count": 0,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "id": "cP4G60CKtXEy",
+        "colab_type": "text"
+      },
+      "cell_type": "markdown",
+      "source": [
+        "## 2.4 Disparity matrix\n"
+      ]
+    },
+    {
+      "metadata": {
+        "id": "p8TxtePhs9mJ",
+        "colab_type": "code",
+        "colab": {}
+      },
+      "cell_type": "code",
+      "source": [
+        "#2.4\n",
+        "#disparityMap(\"tsucuba_left.png\",\"tsucuba_right.png\",\"task2 disparity.jpg\")"
+      ],
+      "execution_count": 0,
+      "outputs": []
+    },
+    {
+      "metadata": {
+        "id": "ZnW8bA5WsIdw",
+        "colab_type": "text"
+      },
+      "cell_type": "markdown",
+      "source": [
+        "## Citations\n",
+        "https://docs.opencv.org/3.0-beta/doc/py_tutorials/py_calib3d/py_epipolar_geometry/py_epipolar_geometry.html\n",
+        "https://en.wikipedia.org/wiki/Fundamental_matrix_(computer_vision)\n",
+        "https://stackoverflow.com/questions/34293973/different-result-in-computing-fundamental-matrix-by-python-and-c-using-opencv\n",
+        "https://docs.opencv.org/3.1.0/da/de9/tutorial_py_epipolar_geometry.html\n",
+        "https://stats.stackexchange.com/questions/92303/how-to-calculate-disparity-of-two-images-in-matlab"
+      ]
+    }
+  ]
+}
